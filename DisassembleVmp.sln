@@ -1,0 +1,27 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.0.0
+MinimumVisualStudioVersion = 10.0.0.0
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libsla", "libsla\libsla.vcxproj", "{A1B2C3D4-1111-2222-3333-444455556666}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vmp_engine", "engine\vmp_engine.vcxproj", "{A1B2C3D4-1111-2222-3333-444455557777}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A1B2C3D4-1111-2222-3333-444455556666} = {A1B2C3D4-1111-2222-3333-444455556666}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "x64deobf", "plugin\x64deobf.vcxproj", "{A1B2C3D4-1111-2222-3333-444455558888}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-1111-2222-3333-444455556666}.Release|x64.ActiveCfg = Release|x64
+		{A1B2C3D4-1111-2222-3333-444455556666}.Release|x64.Build.0 = Release|x64
+		{A1B2C3D4-1111-2222-3333-444455557777}.Release|x64.ActiveCfg = Release|x64
+		{A1B2C3D4-1111-2222-3333-444455557777}.Release|x64.Build.0 = Release|x64
+		{A1B2C3D4-1111-2222-3333-444455558888}.Release|x64.ActiveCfg = Release|x64
+		{A1B2C3D4-1111-2222-3333-444455558888}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+EndGlobal

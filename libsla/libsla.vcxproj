@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{A1B2C3D4-1111-2222-3333-444455556666}</ProjectGuid>
+    <RootNamespace>libsla</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)obj\$(Configuration)\</IntDir>
+    <ZLIB_INC>$(ProjectDir)..\deps\zlib\include</ZLIB_INC>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;YY_NO_UNISTD_H;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ZLIB_INC);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Lib>
+      <OutputFile>$(OutDir)libsla.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\action.cc" />
+    <ClCompile Include="src\address.cc" />
+    <!-- analyzesigs.cc excluded: requires loadimage_bfd (Linux BFD) -->
+    <ClCompile Include="src\architecture.cc" />
+    <!-- bfd_arch.cc excluded: requires Linux BFD library -->
+    <ClCompile Include="src\bitfield.cc" />
+    <ClCompile Include="src\block.cc" />
+    <ClCompile Include="src\blockaction.cc" />
+    <ClCompile Include="src\callgraph.cc" />
+    <ClCompile Include="src\capability.cc" />
+    <ClCompile Include="src\cast.cc" />
+    <!-- codedata.cc excluded: requires loadimage_bfd (Linux BFD) -->
+    <ClCompile Include="src\comment_ghidra.cc" />
+    <ClCompile Include="src\comment.cc" />
+    <ClCompile Include="src\compression.cc" />
+    <ClCompile Include="src\condexe.cc" />
+    <ClCompile Include="src\constseq.cc" />
+    <ClCompile Include="src\context.cc" />
+    <ClCompile Include="src\coreaction.cc" />
+    <ClCompile Include="src\cover.cc" />
+    <ClCompile Include="src\cpool_ghidra.cc" />
+    <ClCompile Include="src\cpool.cc" />
+    <ClCompile Include="src\crc32.cc" />
+    <ClCompile Include="src\database_ghidra.cc" />
+    <ClCompile Include="src\database.cc" />
+    <ClCompile Include="src\double.cc" />
+    <ClCompile Include="src\dynamic.cc" />
+    <ClCompile Include="src\emulate.cc" />
+    <ClCompile Include="src\emulateutil.cc" />
+    <ClCompile Include="src\expression.cc" />
+    <ClCompile Include="src\filemanage.cc" />
+    <ClCompile Include="src\float.cc" />
+    <ClCompile Include="src\flow.cc" />
+    <ClCompile Include="src\fspec.cc" />
+    <ClCompile Include="src\funcdata_block.cc" />
+    <ClCompile Include="src\funcdata_op.cc" />
+    <ClCompile Include="src\funcdata_varnode.cc" />
+    <ClCompile Include="src\funcdata.cc" />
+    <ClCompile Include="src\ghidra_arch.cc" />
+    <ClCompile Include="src\ghidra_context.cc" />
+    <ClCompile Include="src\ghidra_translate.cc" />
+    <ClCompile Include="src\globalcontext.cc" />
+    <ClCompile Include="src\grammar.cc" />
+    <ClCompile Include="src\graph.cc" />
+    <ClCompile Include="src\heritage.cc" />
+    <ClCompile Include="src\ifacedecomp.cc" />
+    <ClCompile Include="src\ifaceterm.cc" />
+    <ClCompile Include="src\inject_ghidra.cc" />
+    <ClCompile Include="src\inject_sleigh.cc" />
+    <ClCompile Include="src\interface.cc" />
+    <ClCompile Include="src\jumptable.cc" />
+    <ClCompile Include="src\libdecomp.cc" />
+    <!-- loadimage_bfd.cc excluded: requires Linux BFD library -->
+    <ClCompile Include="src\loadimage_ghidra.cc" />
+    <ClCompile Include="src\loadimage_xml.cc" />
+    <ClCompile Include="src\loadimage.cc" />
+    <ClCompile Include="src\marshal.cc" />
+    <ClCompile Include="src\memstate.cc" />
+    <ClCompile Include="src\merge.cc" />
+    <ClCompile Include="src\modelrules.cc" />
+    <ClCompile Include="src\multiprecision.cc" />
+    <ClCompile Include="src\op.cc" />
+    <ClCompile Include="src\opbehavior.cc" />
+    <ClCompile Include="src\opcodes.cc" />
+    <ClCompile Include="src\options.cc" />
+    <ClCompile Include="src\override.cc" />
+    <ClCompile Include="src\paramid.cc" />
+    <ClCompile Include="src\pcodecompile.cc" />
+    <ClCompile Include="src\pcodeinject.cc" />
+    <ClCompile Include="src\pcodeparse.cc" />
+    <ClCompile Include="src\pcoderaw.cc" />
+    <ClCompile Include="src\prefersplit.cc" />
+    <ClCompile Include="src\prettyprint.cc" />
+    <ClCompile Include="src\printc.cc" />
+    <ClCompile Include="src\printjava.cc" />
+    <ClCompile Include="src\printlanguage.cc" />
+    <ClCompile Include="src\rangeutil.cc" />
+    <ClCompile Include="src\raw_arch.cc" />
+    <ClCompile Include="src\ruleaction.cc" />
+    <ClCompile Include="src\rulecompile.cc" />
+    <ClCompile Include="src\semantics.cc" />
+    <ClCompile Include="src\signature_ghidra.cc" />
+    <ClCompile Include="src\signature.cc" />
+    <ClCompile Include="src\slaformat.cc" />
+    <ClCompile Include="src\sleigh_arch.cc" />
+    <ClCompile Include="src\sleigh.cc" />
+    <ClCompile Include="src\sleighbase.cc" />
+    <ClCompile Include="src\slghparse.cc" />
+    <ClCompile Include="src\slghpatexpress.cc" />
+    <ClCompile Include="src\slghpattern.cc" />
+    <ClCompile Include="src\slghscan.cc" />
+    <ClCompile Include="src\slghsymbol.cc" />
+    <ClCompile Include="src\space.cc" />
+    <ClCompile Include="src\string_ghidra.cc" />
+    <ClCompile Include="src\stringmanage.cc" />
+    <ClCompile Include="src\subflow.cc" />
+    <ClCompile Include="src\testfunction.cc" />
+    <ClCompile Include="src\transform.cc" />
+    <ClCompile Include="src\translate.cc" />
+    <ClCompile Include="src\type.cc" />
+    <ClCompile Include="src\typegrp_ghidra.cc" />
+    <ClCompile Include="src\typeop.cc" />
+    <ClCompile Include="src\unify.cc" />
+    <ClCompile Include="src\unionresolve.cc" />
+    <ClCompile Include="src\userop.cc" />
+    <ClCompile Include="src\variable.cc" />
+    <ClCompile Include="src\varmap.cc" />
+    <ClCompile Include="src\varnode.cc" />
+    <ClCompile Include="src\xml_arch.cc" />
+    <ClCompile Include="src\xml.cc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

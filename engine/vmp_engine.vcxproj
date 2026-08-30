@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{A1B2C3D4-1111-2222-3333-444455557777}</ProjectGuid>
+    <RootNamespace>vmp_engine</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <IMGUI_DIR>$(ProjectDir)deps\imgui</IMGUI_DIR>
+    <JSON_INC>$(ProjectDir)..\plugin\deps</JSON_INC>
+    <CAPSTONE_INC>$(ProjectDir)..\deps\capstone\include</CAPSTONE_INC>
+    <CAPSTONE_LIB>$(ProjectDir)..\deps\capstone\lib\capstone.lib</CAPSTONE_LIB>
+    <UNICORN_INC>$(ProjectDir)..\deps\unicorn\include</UNICORN_INC>
+    <UNICORN_LIB>$(ProjectDir)..\deps\unicorn\lib\unicorn-import.lib</UNICORN_LIB>
+    <UNICORN_DLL>$(ProjectDir)..\deps\unicorn\lib\unicorn.dll</UNICORN_DLL>
+    <GHIDRA_CPP>$(ProjectDir)..\libsla\src</GHIDRA_CPP>
+    <ZLIB_INC>$(ProjectDir)..\deps\zlib\include</ZLIB_INC>
+    <ZLIB_LIB>$(ProjectDir)..\deps\zlib\lib\zs.lib</ZLIB_LIB>
+    <LIBSLA_LIB>$(ProjectDir)..\libsla\bin\Release\libsla.lib</LIBSLA_LIB>
+    <LUA_INC>$(ProjectDir)..\deps\lua\include</LUA_INC>
+    <LUA_LIB>$(ProjectDir)..\deps\lua\lib\lua.lib</LUA_LIB>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)obj\$(Configuration)\</IntDir>
+    <TargetName>vmp_engine</TargetName>
+    <LinkSubSystem>Windows</LinkSubSystem>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(IMGUI_DIR);$(IMGUI_DIR)\backends;$(JSON_INC);$(CAPSTONE_INC);$(UNICORN_INC);$(GHIDRA_CPP);$(ZLIB_INC);$(LUA_INC);$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d3dcompiler.lib;$(CAPSTONE_LIB);$(UNICORN_LIB);$(LIBSLA_LIB);$(ZLIB_LIB);$(LUA_LIB);%(AdditionalDependencies)</AdditionalDependencies>
+      <SubSystem>Windows</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- 编译后复制 specfiles 和 scripts -->
+  <Target Name="CopyAssets" AfterTargets="Link">
+    <Copy SourceFiles="$(UNICORN_DLL)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <SpecFiles Include="$(ProjectDir)..\specfiles\**\*" />
+      <ScriptFiles Include="$(ProjectDir)scripts\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SpecFiles)" DestinationFolder="$(OutDir)specfiles\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ScriptFiles)" DestinationFolder="$(OutDir)scripts\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\ipc\ipc_client.cpp" />
+    <ClCompile Include="src\ui\ui_main.cpp" />
+    <ClCompile Include="src\ui\ui_vmp.cpp" />
+    <ClCompile Include="src\vmp\vmp_analyzer.cpp" />
+    <ClCompile Include="src\vmp\vmp_dead.cpp" />
+    <ClCompile Include="src\vmp\vmp_dump.cpp" />
+    <ClCompile Include="src\vmp\vmp_classifier.cpp" />
+    <ClCompile Include="src\vmp\vmp_annotate.cpp" />
+    <ClCompile Include="src\vmp\vmp_lua.cpp" />
+    <ClCompile Include="deps\imgui\imgui.cpp" />
+    <ClCompile Include="deps\imgui\imgui_demo.cpp" />
+    <ClCompile Include="deps\imgui\imgui_draw.cpp" />
+    <ClCompile Include="deps\imgui\imgui_tables.cpp" />
+    <ClCompile Include="deps\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="deps\imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="deps\imgui\backends\imgui_impl_dx11.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\ipc\ipc_client.h" />
+    <ClInclude Include="src\ui\ui_main.h" />
+    <ClInclude Include="src\vmp\vmp_analyzer.h" />
+    <ClInclude Include="src\vmp\vmp_types.h" />
+    <ClInclude Include="src\vmp\vmp_context.h" />
+    <ClInclude Include="src\vmp\vmp_dead.h" />
+    <ClInclude Include="src\vmp\vmp_dump.h" />
+    <ClInclude Include="src\vmp\vmp_classifier.h" />
+    <ClInclude Include="src\vmp\vmp_annotate.h" />
+    <ClInclude Include="src\vmp\vmp_lua.h" />
+    <ClInclude Include="deps\imgui\imgui.h" />
+    <ClInclude Include="deps\imgui\imgui_internal.h" />
+    <ClInclude Include="deps\imgui\imconfig.h" />
+    <ClInclude Include="deps\imgui\backends\imgui_impl_win32.h" />
+    <ClInclude Include="deps\imgui\backends\imgui_impl_dx11.h" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -1,0 +1,25 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# VS temp files
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+.vs/
+
+# ImGui state
+imgui.ini
+imgui.ini.bak
+imgui.ini11
+
+# Dump files
+*.json
+!plugin/deps/nlohmann/**
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

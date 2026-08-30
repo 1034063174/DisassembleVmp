@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- 筛选器定义 -->
+  <ItemGroup>
+    <Filter Include="core">
+      <UniqueIdentifier>{b1c2d3e4-0001-0001-0001-000000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="passes">
+      <UniqueIdentifier>{b1c2d3e4-0002-0002-0002-000000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ipc">
+      <UniqueIdentifier>{b1c2d3e4-0003-0003-0003-000000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="utils">
+      <UniqueIdentifier>{b1c2d3e4-0004-0004-0004-000000000004}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+
+  <!-- .cpp 文件 -->
+  <ItemGroup>
+    <ClCompile Include="src\pluginmain.cpp" />
+    <ClCompile Include="src\plugin.cpp" />
+
+    <ClCompile Include="src\core\snapshot.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\disasm.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\emulator.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\pass_manager.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\patcher.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+
+    <ClCompile Include="src\passes\pass_nop_equivalent.cpp">
+      <Filter>passes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\passes\pass_opaque_predicate.cpp">
+      <Filter>passes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\passes\pass_machine_state.cpp">
+      <Filter>passes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\passes\pass_junk_heuristic.cpp">
+      <Filter>passes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\passes\pass_push_pop.cpp">
+      <Filter>passes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\passes\pass_dead_store.cpp">
+      <Filter>passes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\passes\pass_dead_store_backward.cpp">
+      <Filter>passes</Filter>
+    </ClCompile>
+
+    <ClCompile Include="src\ipc\ipc_server.cpp">
+      <Filter>ipc</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ipc\ipc_handler.cpp">
+      <Filter>ipc</Filter>
+    </ClCompile>
+
+    <ClCompile Include="src\utils\logger.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
+  </ItemGroup>
+
+  <!-- .h 文件 -->
+  <ItemGroup>
+    <ClInclude Include="src\pluginmain.h" />
+    <ClInclude Include="src\plugin.h" />
+
+    <ClInclude Include="src\core\snapshot.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\disasm.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\emulator.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\ipass.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\pass_manager.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\patcher.h">
+      <Filter>core</Filter>
+    </ClInclude>
+
+    <ClInclude Include="src\passes\pass_nop_equivalent.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\passes\pass_opaque_predicate.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\passes\pass_machine_state.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\passes\pass_junk_heuristic.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\passes\pass_push_pop.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\passes\pass_dead_store.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\passes\pass_dead_store_backward.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\passes\reg_family.h">
+      <Filter>passes</Filter>
+    </ClInclude>
+
+    <ClInclude Include="src\ipc\ipc_server.h">
+      <Filter>ipc</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ipc\ipc_handler.h">
+      <Filter>ipc</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ipc\ipc_protocol.h">
+      <Filter>ipc</Filter>
+    </ClInclude>
+
+    <ClInclude Include="src\utils\logger.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+  </ItemGroup>
+
+</Project>

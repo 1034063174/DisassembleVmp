@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{A1B2C3D4-1111-2222-3333-444455558888}</ProjectGuid>
+    <RootNamespace>x64deobf</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <X64DBG_SDK>$(ProjectDir)..\deps\pluginsdk</X64DBG_SDK>
+    <CAPSTONE_INC>$(ProjectDir)..\deps\capstone\include</CAPSTONE_INC>
+    <CAPSTONE_LIB>$(ProjectDir)..\deps\capstone\lib\capstone.lib</CAPSTONE_LIB>
+    <UNICORN_INC>$(ProjectDir)..\deps\unicorn\include</UNICORN_INC>
+    <UNICORN_LIB>$(ProjectDir)..\deps\unicorn\lib\unicorn-import.lib</UNICORN_LIB>
+    <UNICORN_DLL>$(ProjectDir)..\deps\unicorn\lib\unicorn.dll</UNICORN_DLL>
+    <JSON_INC>$(ProjectDir)deps</JSON_INC>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)obj\$(Configuration)\</IntDir>
+    <TargetExt>.dp64</TargetExt>
+    <TargetName>x64deobf</TargetName>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(X64DBG_SDK);$(X64DBG_SDK)\..;$(CAPSTONE_INC);$(UNICORN_INC);$(JSON_INC);$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>PLUGIN_NAME="x64deobf";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(X64DBG_SDK)\x64dbg.lib;$(X64DBG_SDK)\x64bridge.lib;$(CAPSTONE_LIB);$(UNICORN_LIB);%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <Target Name="CopyDll" AfterTargets="Link">
+    <Copy SourceFiles="$(UNICORN_DLL)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
+    <ClCompile Include="src\pluginmain.cpp" />
+    <ClCompile Include="src\plugin.cpp" />
+    <ClCompile Include="src\core\snapshot.cpp" />
+    <ClCompile Include="src\ipc\ipc_server.cpp" />
+    <ClCompile Include="src\ipc\ipc_handler.cpp" />
+    <ClCompile Include="src\utils\logger.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\pluginmain.h" />
+    <ClInclude Include="src\plugin.h" />
+    <ClInclude Include="src\core\snapshot.h" />
+    <ClInclude Include="src\ipc\ipc_server.h" />
+    <ClInclude Include="src\ipc\ipc_handler.h" />
+    <ClInclude Include="src\ipc\ipc_protocol.h" />
+    <ClInclude Include="src\utils\logger.h" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
