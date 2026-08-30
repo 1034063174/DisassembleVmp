@@ -77,11 +77,11 @@ vmp_engine 分析引擎
 
 x64deobf.dp64放到X64dbg插件目录然后运行x64DBG
 
-![image-20260830224533715](G:\2026_脱壳\DisassembleVmp\image-20260830224533715.png)
+![image-20260830224533715](image-20260830224533715.png)
 
 运行vmp_engine.exe 点击解析
 
-![image-20260830223559764](G:\2026_脱壳\DisassembleVmp\image-20260830223559764.png)
+![image-20260830223559764](image-20260830223559764.png)
 
 
 
