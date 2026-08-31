@@ -4,6 +4,8 @@
 
 注意:本工具目前支持拆分HANDLE 但是对于HANDLE的解析可能完全是错的，需要修改C代码 或者通过LUA重写HANDLE识别。
 
+> **当前仅支持 64 位 (x86-64) 目标程序的 VMP 分析。**
+
 ## 设计理念
 
 VMProtect 虚拟化的分析不能仅靠静态规则。每个被保护的程序都有不同的 handler 结构、寄存器映射和栈布局。DisassembleVmp 提供的是一个**分析基础设施**：
@@ -24,11 +26,13 @@ DisassembleVmp/
 │   │   ├── vmp/         核心分析逻辑（模拟、PCode、死代码消除、分类、Lua 引擎）
 │   │   ├── ui/          ImGui 界面
 │   │   └── ipc/         与 x64dbg 插件通信
+│   ├── scripts/         Lua 分析脚本
 │   └── deps/imgui/      Dear ImGui 源码
 ├── plugin/              x64dbg 插件（x64deobf.dp64）
 │   └── src/             IPC server + 内存读写 + 寄存器快照
 ├── libsla/              Ghidra Sleigh 翻译引擎（libsla.lib）
 │   └── src/             Ghidra Decompiler C++ 源码
+├── pushtest_demo/       测试目标程序（含内联汇编，用于验证分析流程）
 ├── deps/                预编译第三方依赖
 │   ├── capstone/        反汇编引擎
 │   ├── unicorn/         CPU 模拟引擎
@@ -36,7 +40,6 @@ DisassembleVmp/
 │   ├── zlib/            压缩库
 │   └── pluginsdk/       x64dbg 插件 SDK
 ├── specfiles/           Sleigh .sla 规范文件（运行时需要）
-├── scripts/             Lua 分析脚本
 └── DisassembleVmp.sln   Visual Studio 解决方案
 ```
 
@@ -94,7 +97,7 @@ x64deobf.dp64放到X64dbg插件目录然后运行x64DBG
 所有依赖已包含在仓库中，克隆即可编译：
 
 ```bash
-git clone https://github.com/yourname/DisassembleVmp.git
+git clone https://github.com/1034063174/DisassembleVmp.git
 cd DisassembleVmp
 msbuild DisassembleVmp.sln /p:Configuration=Release /p:Platform=x64 /m
 ```
@@ -108,6 +111,7 @@ msbuild DisassembleVmp.sln /p:Configuration=Release /p:Platform=x64 /m
 | libsla | `libsla\bin\Release\libsla.lib` | Sleigh 翻译引擎静态库 |
 | vmp_engine | `engine\bin\Release\vmp_engine.exe` | 分析引擎主程序 |
 | x64deobf | `plugin\bin\Release\x64deobf.dp64` | x64dbg 插件 |
+| pushtest_demo | `pushtest_demo\bin\Release\pushtest_demo.exe` | 测试目标程序 |
 
 ## 许可证
 

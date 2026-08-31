@@ -12,6 +12,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vmp_engine", "engine\vmp_en
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "x64deobf", "plugin\x64deobf.vcxproj", "{A1B2C3D4-1111-2222-3333-444455558888}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pushtest_demo", "pushtest_demo\pushtest_demo.vcxproj", "{AAAABBBB-0000-0000-0000-000000000001}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Release|x64 = Release|x64
@@ -23,5 +25,7 @@ Global
 		{A1B2C3D4-1111-2222-3333-444455557777}.Release|x64.Build.0 = Release|x64
 		{A1B2C3D4-1111-2222-3333-444455558888}.Release|x64.ActiveCfg = Release|x64
 		{A1B2C3D4-1111-2222-3333-444455558888}.Release|x64.Build.0 = Release|x64
+		{AAAABBBB-0000-0000-0000-000000000001}.Release|x64.ActiveCfg = Release|x64
+		{AAAABBBB-0000-0000-0000-000000000001}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 EndGlobal
