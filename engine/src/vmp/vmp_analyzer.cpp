@@ -92,8 +92,10 @@ public:
 
 // ── Unicorn hooks ─────────────────────────────────────────────────────────────
 
-// 栈槽数：RSP-8*STACK_SLOTS .. RSP+8*STACK_SLOTS，共 2*STACK_SLOTS+1 项
-static constexpr int STACK_SLOTS = 8;
+// 栈缓存：RSP-0x250 .. RSP+0x50（非对称，VMP 虚拟栈在 RSP 下方）
+static constexpr int STACK_BELOW = 10; 
+static constexpr int STACK_ABOVE = 74;
+static constexpr int STACK_TOTAL = STACK_BELOW + 1 + STACK_ABOVE; // 85
 
 struct StackSlot { int64_t offset; uint64_t addr; uint64_t value; };
 
@@ -101,8 +103,7 @@ struct TraceEntry {
     uint64_t addr;
     uint32_t size;
     RegCtx   regs;
-    // 执行前直接从 Unicorn 读取的栈内存，与 pages[] 无关
-    StackSlot stack[2 * STACK_SLOTS + 1];
+    StackSlot stack[STACK_TOTAL];
 };
 
 struct HookCtx {
@@ -129,13 +130,13 @@ static void cb_code(uc_engine* uc, uint64_t addr, uint32_t size, void* user) {
 
     // 栈快照：直接从 Unicorn 当前内存状态读取，而不是从 pages[] 读
     // UC_HOOK_CODE 在指令执行前触发，此时寄存器和内存都是执行前状态
-    for (int slot = -STACK_SLOTS; slot <= STACK_SLOTS; ++slot) {
-        int idx = slot + STACK_SLOTS;
+    for (int slot = -STACK_BELOW; slot <= STACK_ABOVE; ++slot) {
+        int idx = slot + STACK_BELOW;
         uint64_t sa = r.rsp + (uint64_t)((int64_t)slot * 8);
         te.stack[idx].offset = (int64_t)slot * 8;
         te.stack[idx].addr   = sa;
         te.stack[idx].value  = 0;
-        uc_mem_read(uc, sa, &te.stack[idx].value, 8); // 读失败时 value 保持 0
+        uc_mem_read(uc, sa, &te.stack[idx].value, 8);
     }
 
     c->trace.push_back(te);
@@ -756,8 +757,8 @@ VmpAnalysisResult vmp_analyze(IpcClient& ipc,
                     cs.regs.rflags = rd2(UC_X86_REG_EFLAGS);
 
                     // 执行前读栈快照
-                    for (int slot = -STACK_SLOTS; slot <= STACK_SLOTS; ++slot) {
-                        int idx = slot + STACK_SLOTS;
+                    for (int slot = -STACK_BELOW; slot <= STACK_ABOVE; ++slot) {
+                        int idx = slot + STACK_BELOW;
                         uint64_t sa = cs.regs.rsp + (uint64_t)((int64_t)slot * 8);
                         cs.stack[idx].offset = (int64_t)slot * 8;
                         cs.stack[idx].addr   = sa;

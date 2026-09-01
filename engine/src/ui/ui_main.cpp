@@ -27,11 +27,11 @@ static void SettingsHandler_ReadLine(ImGuiContext*, ImGuiSettingsHandler*, void*
     if (sscanf(line, "vmp_hide_jmp_imm=%d", &v) == 1)      { ui->vmp_hide_jmp_imm_ = (v != 0); return; }
     if (sscanf(line, "vmp_ignore_eflag=%d", &v) == 1)       { ui->vmp_ignore_eflag_ = (v != 0); return; }
     int si; char nbuf[64], pbuf[512];
-    if (sscanf(line, "lua_slot%d_name=%63[^\n]", &si, nbuf) == 2 && si >= 0 && si < 5) {
+    if (sscanf(line, "lua_slot%d_name=%63[^\n]", &si, nbuf) == 2 && si >= 0 && si < UiMain::LUA_SLOT_COUNT) {
         snprintf(ui->vmp_lua_slots_[si].name, sizeof(ui->vmp_lua_slots_[si].name), "%s", nbuf);
         return;
     }
-    if (sscanf(line, "lua_slot%d_path=%511[^\n]", &si, pbuf) == 2 && si >= 0 && si < 5) {
+    if (sscanf(line, "lua_slot%d_path=%511[^\n]", &si, pbuf) == 2 && si >= 0 && si < UiMain::LUA_SLOT_COUNT) {
         snprintf(ui->vmp_lua_slots_[si].path, sizeof(ui->vmp_lua_slots_[si].path), "%s", pbuf);
         return;
     }
@@ -55,7 +55,7 @@ static void SettingsHandler_WriteAll(ImGuiContext* ctx, ImGuiSettingsHandler* ha
     buf->appendf("vmp_hide_junk=%d\n", ui->vmp_hide_junk_ ? 1 : 0);
     buf->appendf("vmp_hide_jmp_imm=%d\n", ui->vmp_hide_jmp_imm_ ? 1 : 0);
     buf->appendf("vmp_ignore_eflag=%d\n", ui->vmp_ignore_eflag_ ? 1 : 0);
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < UiMain::LUA_SLOT_COUNT; ++i) {
         if (ui->vmp_lua_slots_[i].name[0])
             buf->appendf("lua_slot%d_name=%s\n", i, ui->vmp_lua_slots_[i].name);
         if (ui->vmp_lua_slots_[i].path[0])

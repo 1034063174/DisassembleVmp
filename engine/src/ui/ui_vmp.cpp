@@ -486,7 +486,7 @@ void UiMain::renderVmpTab()
     }
 
     // Lua 脚本按钮（5个可配置槽位）
-    for (int si = 0; si < 5; ++si) {
+    for (int si = 0; si < LUA_SLOT_COUNT; ++si) {
         auto& slot = vmp_lua_slots_[si];
         ImGui::SameLine();
 
@@ -588,7 +588,10 @@ void UiMain::renderVmpTab()
                 ImGui::PushStyleColor(ImGuiCol_Text, handler_color(h.type));
                 if (ImGui::Selectable(label, sel)) {
                     vmp_selected_handler_ = hi;
-                    vmp_selected_row_     = -1;
+                    if (!h.row_indices.empty())
+                        vmp_selected_row_ = h.row_indices[0];
+                    else
+                        vmp_selected_row_ = -1;
                 }
                 ImGui::PopStyleColor();
 
@@ -878,6 +881,13 @@ void UiMain::renderVmpTab()
             bool has_sd = row.has_deobf && !row.stack_deobf.empty();
 
             ImGui::Text("栈快照  —  %s", row.asm_text.c_str());
+            ImGui::SameLine(0, 20);
+            ImGui::Checkbox("自定义基准", &vmp_stack_custom_base_);
+            if (vmp_stack_custom_base_) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(160);
+                ImGui::InputText("##stack_base", vmp_stack_base_buf_, sizeof(vmp_stack_base_buf_));
+            }
             ImGui::Separator();
 
             if (row.stack.empty()) {
@@ -933,10 +943,22 @@ void UiMain::renderVmpTab()
 
                         // 偏移列
                         ImGui::TableSetColumnIndex(0);
-                        if (s.offset == 0)
-                            ImGui::TextColored(ImVec4(0.3f,1,0.3f,1), "RSP");
+                        int64_t disp = s.offset;
+                        bool is_base = (s.offset == 0);
+                        if (vmp_stack_custom_base_) {
+                            uint64_t custom_base = 0;
+                            try { custom_base = std::stoull(vmp_stack_base_buf_, nullptr, 16); } catch (...) {}
+                            if (custom_base != 0) {
+                                disp = (int64_t)(s.addr - custom_base);
+                                is_base = (disp == 0);
+                            }
+                        }
+                        if (is_base)
+                            ImGui::TextColored(ImVec4(0.3f,1,0.3f,1), "BASE");
+                        else if (disp > 0)
+                            ImGui::Text("+0x%llX", (unsigned long long)disp);
                         else
-                            ImGui::Text("%+lld", (long long)s.offset);
+                            ImGui::Text("-0x%llX", (unsigned long long)(-disp));
 
                         char as[24], vs[24];
                         snprintf(as, sizeof(as), "0x%llX", (unsigned long long)s.addr);

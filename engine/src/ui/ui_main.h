@@ -49,16 +49,26 @@ private:
         char name[64]  = "";
         char path[512] = "";
     };
-    LuaSlot vmp_lua_slots_[5] = {
+    static constexpr int LUA_SLOT_COUNT = 10;
+    LuaSlot vmp_lua_slots_[LUA_SLOT_COUNT] = {
         {"annotate", "scripts\\annotate.lua"},
         {"Lua2", "scripts\\lua2.lua"},
         {"Lua3", "scripts\\lua3.lua"},
         {"Lua4", "scripts\\lua4.lua"},
         {"Lua5", "scripts\\lua5.lua"},
+        {"Lua6", "scripts\\lua6.lua"},
+        {"Lua7", "scripts\\lua7.lua"},
+        {"Lua8", "scripts\\lua8.lua"},
+        {"Lua9", "scripts\\lua9.lua"},
+        {"Lua10", "scripts\\lua10.lua"},
     };
     int    vmp_lua_edit_slot_   = -1;
     std::vector<std::string> vmp_lua_log_;
     bool   vmp_lua_log_scroll_   = true;
+
+    // ── 栈基准地址 ──────────────────────────────────────────────
+    bool   vmp_stack_custom_base_ = false;
+    char   vmp_stack_base_buf_[24] = "0";
 
     // ── 窗口位置/大小持久化 ──────────────────────────────────────
     int  saved_win_x_ = 0, saved_win_y_ = 0;

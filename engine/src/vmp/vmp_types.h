@@ -34,7 +34,7 @@ struct InsnPcode {
     RegCtx              regs = {};  // 该指令执行前的寄存器值（第一次仿真采集）
     // 执行前栈快照，由 Unicorn cb_code 直接读取（非 pages[] 缓存）
     // 布局：[0]=RSP-8*N .. [N]=RSP .. [2N]=RSP+8*N
-    static constexpr int NSLOTS = 17; // 2*8+1
+    static constexpr int NSLOTS = 85; // STACK_BELOW(74) + 1 + STACK_ABOVE(10)
     struct StackSlot { int64_t offset; uint64_t addr; uint64_t value; };
     StackSlot stack_slots[NSLOTS] = {};
 };

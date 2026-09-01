@@ -312,10 +312,11 @@ std::string vmp_run_lua(const std::string& script_path,
     }
 
     // read back: check global 'writeback' table for field list
-    // default: {"analysis"}, supported: analysis, is_junk, summary
-    bool wb_analysis = true;
-    bool wb_is_junk  = false;
-    bool wb_summary  = false;
+    // default: {"analysis"}, supported: analysis, is_junk, summary, handler_type
+    bool wb_analysis     = true;
+    bool wb_is_junk      = false;
+    bool wb_summary      = false;
+    bool wb_handler_type = false;
 
     lua_getglobal(L, "writeback");
     if (lua_istable(L, -1)) {
@@ -328,6 +329,7 @@ std::string vmp_run_lua(const std::string& script_path,
                 if (strcmp(f, "analysis") == 0) wb_analysis = true;
                 else if (strcmp(f, "is_junk") == 0) wb_is_junk = true;
                 else if (strcmp(f, "summary") == 0) wb_summary = true;
+                else if (strcmp(f, "handler_type") == 0) wb_handler_type = true;
                 else log_fn(std::string("[warn] [C++] writeback: unknown field '") + f + "', ignored");
             }
             lua_pop(L, 1);
@@ -336,9 +338,10 @@ std::string vmp_run_lua(const std::string& script_path,
     lua_pop(L, 1);
 
     std::string wb_fields;
-    if (wb_analysis) { if (!wb_fields.empty()) wb_fields += ", "; wb_fields += "analysis"; }
-    if (wb_is_junk)  { if (!wb_fields.empty()) wb_fields += ", "; wb_fields += "is_junk"; }
-    if (wb_summary)  { if (!wb_fields.empty()) wb_fields += ", "; wb_fields += "summary"; }
+    if (wb_analysis)     { if (!wb_fields.empty()) wb_fields += ", "; wb_fields += "analysis"; }
+    if (wb_is_junk)      { if (!wb_fields.empty()) wb_fields += ", "; wb_fields += "is_junk"; }
+    if (wb_summary)      { if (!wb_fields.empty()) wb_fields += ", "; wb_fields += "summary"; }
+    if (wb_handler_type) { if (!wb_fields.empty()) wb_fields += ", "; wb_fields += "handler_type"; }
     log_fn("[C++] writeback fields: " + (wb_fields.empty() ? "(none)" : wb_fields));
 
     lua_getglobal(L, "rows");
@@ -364,17 +367,29 @@ std::string vmp_run_lua(const std::string& script_path,
     }
     lua_pop(L, 1);
 
-    // read back handlers[].summary
-    if (wb_summary) {
+    // read back handlers[].summary, handlers[].type, handlers[].detail
+    if (wb_summary || wb_handler_type) {
         lua_getglobal(L, "handlers");
         if (lua_istable(L, -1)) {
             for (int i = 0; i < (int)res.handlers.size(); ++i) {
                 lua_rawgeti(L, -1, i + 1);
                 if (lua_istable(L, -1)) {
-                    lua_getfield(L, -1, "summary");
-                    if (lua_isstring(L, -1))
-                        res.handlers[i].summary = lua_tostring(L, -1);
-                    lua_pop(L, 1);
+                    if (wb_summary) {
+                        lua_getfield(L, -1, "summary");
+                        if (lua_isstring(L, -1))
+                            res.handlers[i].summary = lua_tostring(L, -1);
+                        lua_pop(L, 1);
+                    }
+                    if (wb_handler_type) {
+                        lua_getfield(L, -1, "type");
+                        if (lua_isstring(L, -1))
+                            res.handlers[i].type = lua_tostring(L, -1);
+                        lua_pop(L, 1);
+                        lua_getfield(L, -1, "detail");
+                        if (lua_isstring(L, -1))
+                            res.handlers[i].detail = lua_tostring(L, -1);
+                        lua_pop(L, 1);
+                    }
                 }
                 lua_pop(L, 1);
             }
