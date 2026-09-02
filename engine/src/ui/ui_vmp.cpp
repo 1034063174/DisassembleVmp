@@ -11,13 +11,23 @@
 
 static ImVec4 handler_color(const std::string& t)
 {
-    if (t == "vPushReg")   return ImVec4(0.4f, 0.9f, 0.4f, 1);
-    if (t == "vPopReg")    return ImVec4(0.4f, 0.7f, 1.0f, 1);
-    if (t == "vPushImm")   return ImVec4(1.0f, 0.8f, 0.3f, 1);
-    if (t == "vMemAccess") return ImVec4(1.0f, 0.5f, 0.2f, 1);
-    if (t == "vLogicalOp") return ImVec4(0.9f, 0.4f, 0.9f, 1);
-    if (t == "vArith")     return ImVec4(0.9f, 0.6f, 0.2f, 1);
-    if (t == "vExit")      return ImVec4(1.0f, 0.3f, 0.3f, 1);
+    // unknown → 红色
+    if (t == "unknown")    return ImVec4(1.0f, 0.3f, 0.3f, 1);
+    // vPushVSP → 黄色
+    if (t == "vPushVSP")   return ImVec4(1.0f, 0.85f, 0.2f, 1);
+    // vPush 系列（vPushReg, vPushImm64, vPushImm32, vPushImm16 等）→ 绿色
+    if (t.rfind("vPush", 0) == 0) return ImVec4(0.4f, 0.9f, 0.4f, 1);
+    // vPop → 白色
+    if (t == "vPop")       return ImVec4(1.0f, 1.0f, 1.0f, 1);
+    // vStore 系列 → 橙色
+    if (t.rfind("vStore", 0) == 0) return ImVec4(1.0f, 0.5f, 0.2f, 1);
+    // vLoad 系列 → 青色
+    if (t.rfind("vLoad", 0) == 0) return ImVec4(0.3f, 0.85f, 0.9f, 1);
+    // vExit → 红色偏亮
+    if (t == "vExit")      return ImVec4(1.0f, 0.4f, 0.4f, 1);
+    // 算术/逻辑 (vAdd, vSub, vAnd, vOr, vXor, vNot, vNeg, vShr, vShl, vOp 等) → 紫色
+    if (t.rfind("v", 0) == 0) return ImVec4(0.9f, 0.5f, 0.9f, 1);
+    // 默认灰色
     return ImVec4(0.65f, 0.65f, 0.65f, 1);
 }
 

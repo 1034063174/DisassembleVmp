@@ -1,11 +1,14 @@
 // ui_main.cpp — 框架：init / addLog / render / 连接栏 / 自定义设置持久化
 #include "ui_main.h"
+#include "../vmp/vmp_lua.h"
+#include "../vmp/llvm_opt.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <mutex>
 
 // ── ImGui 自定义设置持久化 ───────────────────────────────────────────────────
 
@@ -92,6 +95,22 @@ void UiMain::init(HWND hwnd)
     ipc_.setPipeName(pipe_buf_);
 
     addLog("x64去混淆 UI 已启动");
+
+    // 启动 AI IPC 服务器
+    ai_ipc_.start("\\\\.\\pipe\\vmp_engine_ai", [this](const std::string& cmd, const nlohmann::json& params) {
+        return handleAiCmd(cmd, params);
+    });
+    addLog("AI IPC 服务器已启动: \\\\.\\pipe\\vmp_engine_ai");
+
+    // 初始化 LLVM（可选，DLL 不存在时静默跳过）
+    {
+        std::string llvm_err;
+        if (llvm_opt::init(llvm_err))
+            addLog("LLVM-C.dll 已加载");
+        else
+            addLog(("LLVM-C.dll 未加载: " + llvm_err).c_str());
+    }
+
     auto pipes = IpcClient::scanPipes();
     if (pipes.size() == 1) {
         snprintf(pipe_buf_, sizeof(pipe_buf_), "%s", pipes[0].c_str());
@@ -226,9 +245,86 @@ void UiMain::render()
     renderConnectionBar(ipc_, pipe_buf_, sizeof(pipe_buf_), available_pipes_,
         [this](const char* msg){ addLog("%s", msg); });
 
+    // ── AI IPC: 主线程执行 Lua ──
+    {
+        std::lock_guard<std::mutex> lk(ai_mtx_);
+        if (ai_lua_pending_) {
+            ai_lua_log_.clear();
+            ai_lua_error_.clear();
+            auto err = vmp_run_lua(ai_lua_script_, vmp_result_, ipc_,
+                [this](const std::string& msg) { ai_lua_log_.push_back(msg); });
+            ai_lua_error_ = err;
+            ai_lua_pending_ = false;
+            ai_lua_done_ = true;
+        }
+    }
+
     ImGui::Separator();
 
     renderVmpTab();
 
     ImGui::End();
+}
+
+nlohmann::json UiMain::handleAiCmd(const std::string& cmd, const nlohmann::json& params)
+{
+    using json = nlohmann::json;
+
+    if (cmd == "ping") {
+        return {{"status", "ok"}, {"engine", "vmp_engine"}, {"has_data", vmp_result_.ok}};
+    }
+
+    if (cmd == "run_lua") {
+        std::string script = params.value("script", "");
+        if (script.empty())
+            return {{"status", "error"}, {"error", "missing 'script' param"}};
+
+        if (!vmp_result_.ok)
+            return {{"status", "error"}, {"error", "no analysis data loaded"}};
+
+        // 提交给主线程执行
+        {
+            std::lock_guard<std::mutex> lk(ai_mtx_);
+            ai_lua_script_ = script;
+            ai_lua_pending_ = true;
+            ai_lua_done_ = false;
+        }
+
+        // 等主线程执行完成（最多 30 秒）
+        for (int i = 0; i < 3000; ++i) {
+            Sleep(10);
+            std::lock_guard<std::mutex> lk(ai_mtx_);
+            if (ai_lua_done_) {
+                json resp;
+                if (ai_lua_error_.empty()) {
+                    resp["status"] = "ok";
+                } else {
+                    resp["status"] = "error";
+                    resp["error"] = ai_lua_error_;
+                }
+                resp["log"] = ai_lua_log_;
+                return resp;
+            }
+        }
+        return {{"status", "error"}, {"error", "timeout waiting for main thread"}};
+    }
+
+    if (cmd == "get_handlers") {
+        if (!vmp_result_.ok)
+            return {{"status", "error"}, {"error", "no analysis data loaded"}};
+
+        json list = json::array();
+        for (int i = 0; i < (int)vmp_result_.handlers.size(); ++i) {
+            auto& h = vmp_result_.handlers[i];
+            list.push_back({{"index", i}, {"type", h.type}, {"detail", h.detail}});
+        }
+        return {{"status", "ok"}, {"handlers", list}};
+    }
+
+    if (cmd == "get_lua_log") {
+        std::lock_guard<std::mutex> lk(ai_mtx_);
+        return {{"status", "ok"}, {"log", ai_lua_log_}};
+    }
+
+    return {{"status", "error"}, {"error", "unknown command: " + cmd}};
 }

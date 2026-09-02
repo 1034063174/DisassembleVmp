@@ -75,6 +75,7 @@
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\ipc\ipc_client.cpp" />
+    <ClCompile Include="src\ipc\engine_ipc_server.cpp" />
     <ClCompile Include="src\ui\ui_main.cpp" />
     <ClCompile Include="src\ui\ui_vmp.cpp" />
     <ClCompile Include="src\vmp\vmp_analyzer.cpp" />
@@ -83,6 +84,7 @@
     <ClCompile Include="src\vmp\vmp_classifier.cpp" />
     <ClCompile Include="src\vmp\vmp_annotate.cpp" />
     <ClCompile Include="src\vmp\vmp_lua.cpp" />
+    <ClCompile Include="src\vmp\llvm_opt.cpp" />
     <ClCompile Include="deps\imgui\imgui.cpp" />
     <ClCompile Include="deps\imgui\imgui_demo.cpp" />
     <ClCompile Include="deps\imgui\imgui_draw.cpp" />
@@ -93,6 +95,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ipc\ipc_client.h" />
+    <ClInclude Include="src\ipc\engine_ipc_server.h" />
     <ClInclude Include="src\ui\ui_main.h" />
     <ClInclude Include="src\vmp\vmp_analyzer.h" />
     <ClInclude Include="src\vmp\vmp_types.h" />
@@ -102,6 +105,7 @@
     <ClInclude Include="src\vmp\vmp_classifier.h" />
     <ClInclude Include="src\vmp\vmp_annotate.h" />
     <ClInclude Include="src\vmp\vmp_lua.h" />
+    <ClInclude Include="src\vmp\llvm_opt.h" />
     <ClInclude Include="deps\imgui\imgui.h" />
     <ClInclude Include="deps\imgui\imgui_internal.h" />
     <ClInclude Include="deps\imgui\imconfig.h" />

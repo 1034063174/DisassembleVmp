@@ -3,6 +3,7 @@
 
 #include "vmp_lua.h"
 #include "../ipc/ipc_client.h"
+#include "llvm_opt.h"
 
 extern "C" {
 #include <lua.h>
@@ -108,6 +109,47 @@ static int l_set_clipboard(lua_State* L)
     const char* text = luaL_checkstring(L, 1);
     ImGui::SetClipboardText(text);
     return 0;
+}
+
+// llvm_available() -> bool
+static int l_llvm_available(lua_State* L)
+{
+    lua_pushboolean(L, llvm_opt::is_available());
+    return 1;
+}
+
+// llvm_optimize_ir(ir_text [, opt_level]) -> optimized_ir, err
+static int l_llvm_optimize_ir(lua_State* L)
+{
+    const char* ir = luaL_checkstring(L, 1);
+    int level = (int)luaL_optinteger(L, 2, 2);
+    std::string err;
+    std::string result = llvm_opt::optimize_ir(ir, level, err);
+    if (!err.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L, err.c_str());
+        return 2;
+    }
+    lua_pushstring(L, result.c_str());
+    lua_pushnil(L);
+    return 2;
+}
+
+// llvm_emit_asm(ir_text [, opt_level]) -> asm_text, err
+static int l_llvm_emit_asm(lua_State* L)
+{
+    const char* ir = luaL_checkstring(L, 1);
+    int level = (int)luaL_optinteger(L, 2, 2);
+    std::string err;
+    std::string result = llvm_opt::emit_asm(ir, level, err);
+    if (!err.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L, err.c_str());
+        return 2;
+    }
+    lua_pushstring(L, result.c_str());
+    lua_pushnil(L);
+    return 2;
 }
 
 static void push_reg_ctx(lua_State* L, const VmpRegCtx& r)
@@ -228,6 +270,14 @@ std::string vmp_run_lua(const std::string& script_path,
     // set_clipboard(text)
     lua_pushcfunction(L, l_set_clipboard);
     lua_setglobal(L, "set_clipboard");
+
+    // LLVM functions
+    lua_pushcfunction(L, l_llvm_available);
+    lua_setglobal(L, "llvm_available");
+    lua_pushcfunction(L, l_llvm_optimize_ir);
+    lua_setglobal(L, "llvm_optimize_ir");
+    lua_pushcfunction(L, l_llvm_emit_asm);
+    lua_setglobal(L, "llvm_emit_asm");
 
     // context_row: 1-based index of right-clicked row, or nil
     if (context_row >= 0 && context_row < (int)res.rows.size())

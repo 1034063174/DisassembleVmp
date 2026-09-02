@@ -3,11 +3,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "../ipc/ipc_client.h"
+#include "../ipc/engine_ipc_server.h"
 #include "../vmp/vmp_analyzer.h"
 #include "imgui.h"
 #include <nlohmann/json.hpp>
 #include <vector>
 #include <string>
+#include <mutex>
 
 struct ImGuiContext;
 struct ImGuiSettingsHandler;
@@ -27,6 +29,16 @@ private:
 
     // ── 通用 ─────────────────────────────────────── ui_main.cpp
     void addLog(const char* fmt, ...);
+
+    // ── AI IPC 服务器 ─────────────────────────────────────────
+    EngineIpcServer ai_ipc_;
+    nlohmann::json handleAiCmd(const std::string& cmd, const nlohmann::json& params);
+    std::mutex ai_mtx_;
+    std::string ai_lua_script_;            // 待执行脚本路径
+    std::vector<std::string> ai_lua_log_;  // Lua 日志
+    std::string ai_lua_error_;             // 执行结果错误
+    bool ai_lua_pending_ = false;          // IPC线程→主线程：有脚本待执行
+    bool ai_lua_done_ = false;             // 主线程→IPC线程：执行完成
 
     // ── 连接栏状态（共用）────────────────────────────────────────
     IpcClient ipc_;
