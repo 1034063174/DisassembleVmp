@@ -3,6 +3,9 @@
 ; rcx = buf (passed from main, Windows x64 ABI first arg)
 pushtest PROC
     push rax
+    push rax
+    push rax
+    mov  rax, 12345679h
     mov  rax, 12345678h
     push rax
 
@@ -16,7 +19,8 @@ pushtest PROC
 
     pop  rax
     pop  rax
-
+    pop  rax
+    pop  rax
     ; 写 1 字节到 buf[0]
     mov  byte ptr [rcx], 0ABh
 

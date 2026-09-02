@@ -1,712 +1,478 @@
--- split_handlers.lua — 完整版 handler 划分 (1:1 对应 C++ vmp_classifier.cpp)
--- 实现: split_handler_segs, build_seg_defuse, trace_varnode, 全部 tryMatch_*
+dofile("scripts\\tools.lua")
 
--- ═══════════════════════════════════════════════════════════════
--- 寄存器名 → Ghidra offset 映射
--- ═══════════════════════════════════════════════════════════════
-local reg_to_ghidra = {
-    rax=0x00, rcx=0x08, rdx=0x10, rbx=0x18,
-    rsp=0x20, rbp=0x28, rsi=0x30, rdi=0x38,
-    r8=0x80, r9=0x88, r10=0x90, r11=0x98,
-    r12=0xA0, r13=0xA8, r14=0xB0, r15=0xB8,
+writeback = {"handler_type"}
+
+local pushes, vmstack_base, rsp_to_name = get_init_pushes()
+local vs_reg = get_vmstack_reg()
+local vc_reg = vmCode_reg or "r11"
+
+if not vs_reg then
+    log("[error] 未找到 vmStack 寄存器")
+    return
+end
+
+log(string.format("vmStack 寄存器: %s", vs_reg))
+log(string.format("vmCode  寄存器: %s", vc_reg))
+log(string.format("vmStack 基址: 0x%X", vmstack_base))
+log(string.format("\n=== Init: %d 次压栈 ===\n", #pushes))
+
+for _, p in ipairs(pushes) do
+    local v = p.value and string.format("0x%X", p.value) or "?"
+    log(string.format("  slot %2d  RSP=0x%X  %-14s  %s", p.slot, p.rsp_after, p.desc, v))
+end
+log("")
+
+local function vmstack_lookup(ptr)
+    local name = rsp_to_name[ptr]
+    local off = ptr - vmstack_base
+    return name, off
+end
+
+-- 辅助：检查 mem 操作数是否为 [reg] 无偏移无 index
+local function is_bare_mem(op, base)
+    return op.type == "mem" and op.mem_base == base
+           and (op.mem_index == "" or not op.mem_index)
+           and (not op.mem_disp or op.mem_disp == 0)
+end
+
+-- 辅助：子寄存器名 → 64 位全名
+local subreg_map = {
+    eax="rax", ax="rax", al="rax", ah="rax",
+    ebx="rbx", bx="rbx", bl="rbx", bh="rbx",
+    ecx="rcx", cx="rcx", cl="rcx", ch="rcx",
+    edx="rdx", dx="rdx", dl="rdx", dh="rdx",
+    esi="rsi", si="rsi", sil="rsi",
+    edi="rdi", di="rdi", dil="rdi",
+    ebp="rbp", bp="rbp", bpl="rbp",
+    esp="rsp", sp="rsp", spl="rsp",
+    r8d="r8",  r8w="r8",  r8b="r8",
+    r9d="r9",  r9w="r9",  r9b="r9",
+    r10d="r10", r10w="r10", r10b="r10",
+    r11d="r11", r11w="r11", r11b="r11",
+    r12d="r12", r12w="r12", r12b="r12",
+    r13d="r13", r13w="r13", r13b="r13",
+    r14d="r14", r14w="r14", r14b="r14",
+    r15d="r15", r15w="r15", r15b="r15",
 }
-local ghidra_to_reg = {}
-for k, v in pairs(reg_to_ghidra) do ghidra_to_reg[v] = k end
-
-local RSP_OFF = 0x20
-local vmcode_ghidra_off = reg_to_ghidra[vmCode_reg] or 0
-local vmstack_ghidra_off = reg_to_ghidra[vmStack_reg] or 0
-
--- ═══════════════════════════════════════════════════════════════
--- def-use 表: {space:offset} → {op=, insn_idx=}
--- 对应 C++: build_seg_defuse()
--- ═══════════════════════════════════════════════════════════════
-local function vn_key(space, offset)
-    return space .. ":" .. offset
+local function reg64(name)
+    return subreg_map[name] or name
 end
 
-local function build_seg_defuse(seg_rows)
-    local du = {}
-    for _, ri in ipairs(seg_rows) do
+-- 辅助：从 regs 表取寄存器值（自动处理子寄存器）
+local function get_reg_val(regs, name)
+    if not regs or not regs.valid then return nil end
+    return regs[reg64(name)]
+end
+
+handlers[1].type = "(init+dispatch)"
+handlers[1].detail = ""
+
+-- rsp+offset → 寄存器名 映射表（由 init 后连续 vPop 建立）
+local rsp_off_to_reg = {}
+local building_reg_map = true  -- 遇到非 vPop 停止建表
+
+log("=== Handler 分类 ===\n")
+
+for hi = 2, #handlers do
+    local h = handlers[hi]
+
+    local live = {}
+    for _, ri in ipairs(h.row_indices) do
         local row = rows[ri]
-        for _, op in ipairs(row.pcode) do
-            if not op.dead and op.has_out then
-                local k = vn_key(op.out.space, op.out.offset)
-                du[k] = { op = op, row_idx = ri }
-            end
+        if not row.is_junk then
+            table.insert(live, row)
         end
     end
-    return du
-end
 
--- ═══════════════════════════════════════════════════════════════
--- trace_varnode / trace_defentry (互递归)
--- 对应 C++: trace_varnode() + trace_defentry()
--- 返回: {is_vmstack_addr, is_vmstack_off, from_vmstack, from_vmcode}
--- ═══════════════════════════════════════════════════════════════
-local function new_src()
-    return { is_vmstack_addr=false, is_vmstack_off=false, from_vmstack=false, from_vmcode=false }
-end
+    local typ = "unknown"
+    local det = ""
 
-local function merge_src(dst, src)
-    if src.is_vmstack_addr then dst.is_vmstack_addr = true end
-    if src.is_vmstack_off  then dst.is_vmstack_off  = true end
-    if src.from_vmstack    then dst.from_vmstack     = true end
-    if src.from_vmcode     then dst.from_vmcode      = true end
-end
+    if #live < 2 then
+        h.type = typ; h.detail = det
+        goto next_handler
+    end
 
--- 前向声明
-local trace_varnode
+    local i1 = live[1]
+    local i2 = live[2]
 
-local function trace_defentry(de, du, seg_vmcode_off, vso, vdr, depth)
-    local r = new_src()
-    if not de or not de.op then return r end
-    local op = de.op
+    -- ══════════════════════════════════════════════════════════
+    -- vPop 特征（前两条固定）:
+    --   mov  xxx, [vs_reg]
+    --   add  vs_reg, 8
+    -- ══════════════════════════════════════════════════════════
+    if i1.mnemonic == "mov" and #i1.operands >= 2
+       and is_bare_mem(i1.operands[2], vs_reg)
+       and i2.mnemonic == "add" and #i2.operands >= 2
+       and i2.operands[1].type == "reg" and i2.operands[1].reg == vs_reg
+       and i2.operands[2].type == "imm" and i2.operands[2].imm == 8 then
 
-    if op.opc_name == "LOAD" then
-        if #op.ins >= 2 then
-            local addr = trace_varnode(op.ins[2], du, seg_vmcode_off, vso, vdr, depth)
-            if addr.is_vmstack_addr or addr.from_vmstack then
-                r.from_vmstack = true
-            elseif addr.from_vmcode then
-                r.from_vmcode = true
+        typ = "vPop"
+        local pop_reg = i1.operands[1].reg
+        local vmstack_name = nil  -- vmStack 对应的寄存器名
+        local pop_target_off = nil  -- 弹出目标 rsp+offset
+
+        -- vmStack 偏移 + 对应寄存器（仅建表阶段显示）
+        if building_reg_map and i1.regs and i1.regs.valid then
+            local ptr = i1.regs[vs_reg]
+            if ptr then
+                local name, off = vmstack_lookup(ptr)
+                vmstack_name = name
+                if name then
+                    det = string.format("vmStack[+0x%X](%s)", off, name)
+                else
+                    det = string.format("vmStack[+0x%X]", off)
+                end
             end
         end
 
-    elseif op.opc_name == "COPY" then
-        if #op.ins >= 1 then
-            r = trace_varnode(op.ins[1], du, seg_vmcode_off, vso, vdr, depth)
-        end
-
-    elseif op.opc_name == "INT_ADD" then
-        if #op.ins ~= 2 then return r end
-        local a_vn, b_vn = op.ins[1], op.ins[2]
-        local a_rsp = (a_vn.space == "register" and a_vn.offset == RSP_OFF)
-        local b_rsp = (b_vn.space == "register" and b_vn.offset == RSP_OFF)
-        local a_vso = (vso ~= 0 and a_vn.space == "register" and a_vn.offset == vso)
-        local b_vso = (vso ~= 0 and b_vn.space == "register" and b_vn.offset == vso)
-
-        if (a_rsp and b_vso) or (b_rsp and a_vso) then
-            r.is_vmstack_addr = true
-        else
-            local a = trace_varnode(a_vn, du, seg_vmcode_off, vso, vdr, depth)
-            local b = trace_varnode(b_vn, du, seg_vmcode_off, vso, vdr, depth)
-            if a.is_vmstack_addr or b.is_vmstack_addr then r.is_vmstack_addr = true end
-            if (a_rsp and b.is_vmstack_off) or (b_rsp and a.is_vmstack_off) then
-                r.is_vmstack_addr = true
-            end
-            if a.is_vmstack_off or b.is_vmstack_off then r.is_vmstack_off = true end
-            if a.from_vmcode or b.from_vmcode then r.from_vmcode = true end
-        end
-
-    elseif op.opc_name == "INT_SUB" then
-        if #op.ins >= 1 then
-            local a = trace_varnode(op.ins[1], du, seg_vmcode_off, vso, vdr, depth)
-            if a.is_vmstack_addr then r.is_vmstack_addr = true end
-            if a.is_vmstack_off  then r.is_vmstack_off  = true end
-        end
-
-    else
-        -- 所有其他 op: 递归追溯所有输入并合并 (解密链穿透)
-        for _, inv in ipairs(op.ins) do
-            local s = trace_varnode(inv, du, seg_vmcode_off, vso, vdr, depth)
-            merge_src(r, s)
-        end
-    end
-    return r
-end
-
-trace_varnode = function(vn, du, seg_vmcode_off, vso, vdr, depth)
-    local r = new_src()
-    if depth > 12 then return r end
-
-    if vn.space == "register" then
-        -- vmstack_direct_reg
-        if vdr ~= 0 and vn.offset == vdr then
-            r.is_vmstack_addr = true
-            return r
-        end
-        -- vmstack_off_reg
-        if vso ~= 0 and vn.offset == vso then
-            r.is_vmstack_off = true
-            return r
-        end
-        -- vmCode
-        if seg_vmcode_off ~= 0 and vn.offset == seg_vmcode_off then
-            r.from_vmcode = true
-            return r
-        end
-        -- 查 def-use 表
-        local k = vn_key(vn.space, vn.offset)
-        local de = du[k]
-        if de then
-            return trace_defentry(de, du, seg_vmcode_off, vso, vdr, depth + 1)
-        end
-        return r
-    end
-
-    if vn.space == "unique" then
-        local k = vn_key(vn.space, vn.offset)
-        local de = du[k]
-        if not de then return r end
-        return trace_defentry(de, du, seg_vmcode_off, vso, vdr, depth + 1)
-    end
-
-    return r
-end
-
--- ═══════════════════════════════════════════════════════════════
--- build_unique_vals: unique → 运行时值 (COPY/INT_ADD/INT_SUB/INT_MULT)
--- 对应 C++: build_unique_vals()
--- ═══════════════════════════════════════════════════════════════
-local function build_unique_vals(row)
-    local uv = {}
-    for _, op in ipairs(row.pcode) do
-        if op.dead or not op.has_out then goto next end
-        if op.out.space ~= "unique" then goto next end
-
-        if op.opc_name == "COPY" and #op.ins >= 1 then
-            local s = op.ins[1]
-            if s.space == "register" and s.reg_name ~= "" then
-                local v = row.regs[s.reg_name]
-                if v then uv[op.out.offset] = v end
-            end
-        elseif (op.opc_name == "INT_ADD" or op.opc_name == "INT_SUB" or op.opc_name == "INT_MULT")
-               and #op.ins == 2 then
-            local a, b = nil, nil
-            for ii = 1, 2 do
-                local v = op.ins[ii]
-                if v.space == "register" and v.reg_name ~= "" then
-                    local rv = row.regs[v.reg_name]
-                    if rv then
-                        if ii == 1 then a = rv else b = rv end
-                    end
-                elseif v.space == "const" then
-                    if ii == 1 then a = v.offset else b = v.offset end
-                elseif v.space == "unique" then
-                    local uval = uv[v.offset]
-                    if uval then
-                        if ii == 1 then a = uval else b = uval end
+        -- 查找 mov [rsp + A], pop_reg → 弹出目标位置
+        if pop_reg then
+            for j = 3, #live do
+                local row = live[j]
+                if row.mnemonic == "mov" and #row.operands >= 2 then
+                    local dst = row.operands[1]
+                    local src = row.operands[2]
+                    if dst.type == "mem" and dst.mem_base == "rsp"
+                       and src.type == "reg" and src.reg == pop_reg
+                       and row.regs and row.regs.valid then
+                        local target_off = 0
+                        if dst.mem_index ~= "" and dst.mem_index and row.regs[dst.mem_index] then
+                            target_off = row.regs[dst.mem_index]
+                        end
+                        if dst.mem_disp and dst.mem_disp ~= 0 then
+                            target_off = target_off + dst.mem_disp
+                        end
+                        pop_target_off = target_off
+                        -- 用映射表标注寄存器名
+                        local reg_name = rsp_off_to_reg[target_off]
+                        if reg_name then
+                            det = det .. string.format(" ->rsp+0x%X(%s)", target_off, reg_name)
+                        else
+                            det = det .. string.format(" ->rsp+0x%X", target_off)
+                        end
+                        break
                     end
                 end
             end
-            if a and b then
-                if op.opc_name == "INT_ADD" then uv[op.out.offset] = a + b
-                elseif op.opc_name == "INT_SUB" then uv[op.out.offset] = a - b
-                else uv[op.out.offset] = a * b end
+        end
+
+        -- init 后连续 vPop 建立 rsp+offset → 寄存器名映射
+        if building_reg_map and vmstack_name and pop_target_off then
+            rsp_off_to_reg[pop_target_off] = vmstack_name
+        end
+    end
+
+    -- 非 vPop → 停止建表
+    if typ ~= "vPop" and building_reg_map and hi > 2 then
+        building_reg_map = false
+        log("=== rsp+offset → 寄存器映射 ===")
+        local sorted = {}
+        for off, name in pairs(rsp_off_to_reg) do
+            table.insert(sorted, {off=off, name=name})
+        end
+        table.sort(sorted, function(a,b) return a.off < b.off end)
+        for _, item in ipairs(sorted) do
+            log(string.format("  rsp+0x%X = %s", item.off, item.name))
+        end
+        log("")
+    end
+
+    -- ══════════════════════════════════════════════════════════
+    -- vPush 系列（全指令搜索）:
+    --   在 live 中找 sub vs_reg, 8/4 (或 lea vs_reg, [vs_reg-8/-4])
+    --   紧接着找 mov [vs_reg], REG
+    --   然后根据 REG 的来源区分:
+    --     来自 vs_reg             → vPushVSP
+    --     来自 [rsp + offset]    → vPushReg
+    --     来自 vmCode 8 字节     → vPushImm64
+    --     来自 vmCode 4 字节     → vPushImm32
+    -- ══════════════════════════════════════════════════════════
+    if typ == "unknown" then
+        local sub_idx = nil   -- sub vs_reg, N 的位置
+        local sub_size = nil  -- 4 or 8
+        local mov_idx = nil   -- mov [vs_reg], REG 的位置
+        local store_reg = nil -- 写入 vmStack 的寄存器
+
+        -- 搜索 sub vs_reg, 8/4 或 lea vs_reg, [vs_reg-8/-4]
+        for j = 1, #live do
+            local row = live[j]
+            if row.mnemonic == "sub" and #row.operands >= 2
+               and row.operands[1].type == "reg" and row.operands[1].reg == vs_reg
+               and row.operands[2].type == "imm"
+               and (row.operands[2].imm == 8 or row.operands[2].imm == 4 or row.operands[2].imm == 2) then
+                sub_idx = j
+                sub_size = row.operands[2].imm
+                break
+            end
+            if row.mnemonic == "lea" and #row.operands >= 2
+               and row.operands[1].type == "reg" and row.operands[1].reg == vs_reg
+               and row.operands[2].type == "mem" and row.operands[2].mem_base == vs_reg
+               and (row.operands[2].mem_disp == -8 or row.operands[2].mem_disp == -4 or row.operands[2].mem_disp == -2) then
+                sub_idx = j
+                sub_size = -row.operands[2].mem_disp
+                break
             end
         end
-        ::next::
-    end
-    return uv
-end
 
--- 解析 varnode 的运行时地址
-local function resolve_addr(row, vn)
-    local uv = build_unique_vals(row)
-    if vn.space == "register" and vn.reg_name ~= "" then
-        return row.regs[vn.reg_name]
-    elseif vn.space == "const" then
-        return vn.offset
-    elseif vn.space == "unique" then
-        return uv[vn.offset]
-    end
-    return nil
-end
-
--- ═══════════════════════════════════════════════════════════════
--- 地址判定工具
--- ═══════════════════════════════════════════════════════════════
-local function is_vmregfile(addr)
-    if not addr or vmRegBase == 0 then return false end
-    return addr >= vmRegBase and addr < vmRegBase + 256
-end
-
-local function find_def_in_row(row, unique_off)
-    for _, op in ipairs(row.pcode) do
-        if not op.dead and op.has_out
-           and op.out.space == "unique" and op.out.offset == unique_off then
-            return op
-        end
-    end
-    return nil
-end
-
--- is_vmstack_store: 对应 C++ is_vmstack_store()
-local function is_vmstack_store_fn(row, addr_vn)
-    if addr_vn.space == "register" and addr_vn.offset ~= RSP_OFF then
-        return true
-    end
-    if addr_vn.space == "unique" then
-        local def = find_def_in_row(row, addr_vn.offset)
-        if def and def.opc_name == "INT_ADD" and #def.ins == 2 then
-            local has_rsp, has_other = false, false
-            for _, v in ipairs(def.ins) do
-                if v.space == "register" and v.offset == RSP_OFF then has_rsp = true
-                elseif v.space == "register" or v.space == "unique" then has_other = true
+        -- 在 sub 之后找 mov [vs_reg], REG
+        if sub_idx then
+            for j = sub_idx + 1, #live do
+                local row = live[j]
+                if row.mnemonic == "mov" and #row.operands >= 2 then
+                    local dst = row.operands[1]
+                    if is_bare_mem(dst, vs_reg) then
+                        mov_idx = j
+                        local src = row.operands[2]
+                        if src.type == "reg" then
+                            store_reg = src.reg
+                        end
+                        break
+                    end
                 end
             end
-            if has_rsp and has_other then return true end
         end
-    end
-    return false
-end
 
--- is_vmstack_load: 对应 C++ is_vmstack_load()
-local function is_vmstack_load_fn(row, addr_vn, seg_vmcode_off)
-    if addr_vn.space == "register"
-       and addr_vn.offset ~= RSP_OFF
-       and addr_vn.offset ~= seg_vmcode_off then
-        return true
-    end
-    if addr_vn.space == "unique" then
-        local def = find_def_in_row(row, addr_vn.offset)
-        if def and def.opc_name == "INT_ADD" and #def.ins == 2 then
-            local has_rsp, has_other = false, false
-            for _, v in ipairs(def.ins) do
-                if v.space == "register" and v.offset == RSP_OFF then has_rsp = true
-                elseif v.space == "register" or v.space == "unique" then has_other = true
-                end
+        if sub_idx and mov_idx and store_reg then
+
+            -- vmStack 写入位置
+            local mov_row = live[mov_idx]
+            local push_ptr = nil
+            if mov_row.regs and mov_row.regs.valid then
+                push_ptr = mov_row.regs[vs_reg]
             end
-            if has_rsp and has_other then return true end
-        end
-    end
-    return false
-end
 
--- ═══════════════════════════════════════════════════════════════
--- tryMatch_* 函数 (完整版)
--- ═══════════════════════════════════════════════════════════════
+            -- ── 判断数据来源（优先级从高到低） ──
 
-local function tryMatch_vPopReg(seg_rows, seg_vmcode_off, ctx)
-    local found_vmreg_store = false
-    local found_vmstack_load = false
-    local candidate_vdr = 0
-    local slot_name = ""
-
-    for _, ri in ipairs(seg_rows) do
-        local row = rows[ri]
-        local uv = build_unique_vals(row)
-        for _, op in ipairs(row.pcode) do
-            if op.dead then goto next end
-
-            -- vmRegFile STORE
-            if op.opc_name == "STORE" and #op.ins >= 3 and vmRegBase ~= 0 then
-                local addr_vn = op.ins[2]
-                local dst_addr = resolve_addr(row, addr_vn)
-                if is_vmregfile(dst_addr) then
-                    local rel = dst_addr - vmRegBase
-                    if rel >= 0 and rel % 8 == 0 then
-                        found_vmreg_store = true
-                        local slot_addr = dst_addr
-                        slot_name = ghidra_to_reg[ctx.vmRegSlotMap and ctx.vmRegSlotMap[slot_addr]]
-                            or string.format("vmReg[%d]", rel // 8)
+            -- 来源 0: mov REG, vs_reg → vPushVSP (压入 vmStack 指针自身)
+            for j = 1, sub_idx - 1 do
+                local row = live[j]
+                if row.mnemonic == "mov" and #row.operands >= 2 then
+                    local dst = row.operands[1]
+                    local src = row.operands[2]
+                    if dst.type == "reg" and dst.reg == store_reg
+                       and src.type == "reg" and src.reg == vs_reg then
+                        typ = "vPushVSP"
+                        if mov_row.regs and mov_row.regs.valid and get_reg_val(mov_row.regs, store_reg) then
+                            det = string.format("(0x%X)", get_reg_val(mov_row.regs, store_reg))
+                        end
+                        break
                     end
                 end
             end
 
-            -- vmStack LOAD
-            if op.opc_name == "LOAD" and not found_vmstack_load then
-                if is_vmstack_load_fn(row, op.ins[2], seg_vmcode_off) then
-                    found_vmstack_load = true
-                    if ctx.vmstack_direct_reg == 0 and candidate_vdr == 0 and #op.ins >= 2 then
-                        local la = op.ins[2]
-                        if la.space == "register" and la.offset ~= RSP_OFF and la.offset ~= seg_vmcode_off then
-                            candidate_vdr = la.offset
+            -- 来源 1: mov REG, [rsp + offset] → vPushReg (从宿主栈读)
+            if typ == "unknown" then
+                for j = 1, sub_idx - 1 do
+                    local row = live[j]
+                    if row.mnemonic == "mov" and #row.operands >= 2 then
+                        local dst = row.operands[1]
+                        local src = row.operands[2]
+                        if dst.type == "reg" and dst.reg == store_reg
+                           and src.type == "mem" and src.mem_base == "rsp" then
+                            if row.regs and row.regs.valid then
+                                local off = 0
+                                if src.mem_index ~= "" and src.mem_index and row.regs[src.mem_index] then
+                                    off = row.regs[src.mem_index]
+                                end
+                                if src.mem_disp and src.mem_disp ~= 0 then
+                                    off = off + src.mem_disp
+                                end
+                                -- 优先用 vPop 建立的 rsp+offset→寄存器 映射
+                                local reg_name = rsp_off_to_reg[off]
+                                if not reg_name then
+                                    -- 回退：用 init 压栈表查
+                                    local rsp_val = row.regs.rsp
+                                    if rsp_val then
+                                        reg_name = rsp_to_name[rsp_val + off]
+                                    end
+                                end
+                                typ = "vPushReg"
+                                if reg_name then
+                                    det = string.format("(%s) rsp+0x%X", reg_name, off)
+                                else
+                                    det = string.format("rsp+0x%X", off)
+                                end
+                            end
+                            break
                         end
                     end
                 end
             end
 
-            ::next::
-        end
-    end
-
-    if found_vmreg_store and found_vmstack_load then
-        if ctx.vmstack_direct_reg == 0 and candidate_vdr ~= 0 then
-            ctx.vmstack_direct_reg = candidate_vdr
-        end
-        return true, "vPopReg", slot_name
-    end
-    return false
-end
-
-local function tryMatch_vPushReg(seg_rows, seg_vmcode_off, ctx)
-    local found_vmstack_store = false
-    local found_vmreg_load = false
-    local slot_name = ""
-
-    for _, ri in ipairs(seg_rows) do
-        local row = rows[ri]
-        for _, op in ipairs(row.pcode) do
-            if op.dead then goto next end
-
-            if op.opc_name == "STORE" and not found_vmstack_store then
-                if is_vmstack_store_fn(row, op.ins[2]) then
-                    found_vmstack_store = true
-                end
-            end
-
-            if op.opc_name == "LOAD" and #op.ins >= 2 and vmRegBase ~= 0 then
-                local dst_addr = resolve_addr(row, op.ins[2])
-                if is_vmregfile(dst_addr) then
-                    local rel = dst_addr - vmRegBase
-                    if rel >= 0 and rel % 8 == 0 and not found_vmreg_load then
-                        found_vmreg_load = true
-                        slot_name = ghidra_to_reg[ctx.vmRegSlotMap and ctx.vmRegSlotMap[dst_addr]]
-                            or string.format("vmReg[%d]", rel // 8)
+            -- 来源 2: mov REG, [vc_reg] + add vc_reg, N → vPushImm64/vPushImm32/vPushImm16
+            if typ == "unknown" then
+                for j = 1, sub_idx - 1 do
+                    local row = live[j]
+                    if (row.mnemonic == "mov" or row.mnemonic == "movzx") and #row.operands >= 2 then
+                        local src = row.operands[2]
+                        if src.type == "mem" and src.mem_base == vc_reg
+                           and (src.mem_index == "" or not src.mem_index)
+                           and (not src.mem_disp or src.mem_disp == 0) then
+                            -- 确认下一条是 add vc_reg, N
+                            if j + 1 <= #live then
+                                local nxt = live[j + 1]
+                                if nxt.mnemonic == "add" and #nxt.operands >= 2
+                                   and nxt.operands[1].type == "reg" and nxt.operands[1].reg == vc_reg
+                                   and nxt.operands[2].type == "imm" then
+                                    local imm_size = nxt.operands[2].imm
+                                    if imm_size == 8 then
+                                        typ = "vPushImm64"
+                                    elseif imm_size == 4 then
+                                        typ = "vPushImm32"
+                                    elseif imm_size == 1 then
+                                        typ = "vPushImm16"
+                                    end
+                                    if typ ~= "unknown" then
+                                        if mov_row.regs and mov_row.regs.valid and mov_row.regs[store_reg] then
+                                            det = string.format("(0x%X)", mov_row.regs[store_reg])
+                                        end
+                                    end
+                                end
+                            end
+                            break
+                        end
                     end
                 end
             end
 
-            ::next::
+            -- 补充写入的值（不再显示 vmStack 偏移）
+            if typ ~= "unknown" then
+                if mov_row.regs and mov_row.regs.valid and get_reg_val(mov_row.regs, store_reg) then
+                    det = det .. string.format(" =0x%X", get_reg_val(mov_row.regs, store_reg))
+                end
+            end
         end
     end
 
-    if found_vmstack_store and found_vmreg_load then
-        return true, "vPushReg", slot_name
-    end
-    return false
-end
+    -- ══════════════════════════════════════════════════════════
+    -- vOp 算术/逻辑运算特征（全指令搜索）:
+    --   pushfq + pop [vs_reg]  → flags 写回 vmStack 栈顶
+    --   中间的算术指令决定具体类型
+    -- ══════════════════════════════════════════════════════════
+    if typ == "unknown" then
+        local pushfq_idx = nil
+        local pop_idx = nil
 
-local function tryMatch_vPushImm(seg_rows, seg_vmcode_off, ctx)
-    local found_vmstack_store = false
-    local found_vmcode_load = false
-    local found_vmreg_load = false
-
-    for _, ri in ipairs(seg_rows) do
-        local row = rows[ri]
-        local uv = build_unique_vals(row)
-        for _, op in ipairs(row.pcode) do
-            if op.dead then goto next end
-
-            if op.opc_name == "STORE" and #op.ins >= 3 then
-                local is_vs = is_vmstack_store_fn(row, op.ins[2])
-                if not found_vmstack_store and is_vs then
-                    found_vmstack_store = true
-                end
-                if not is_vs and vmRegBase ~= 0 then
-                    local dst_addr = resolve_addr(row, op.ins[2])
-                    if is_vmregfile(dst_addr) then found_vmreg_load = true end
-                end
-            end
-
-            if op.opc_name == "LOAD" and #op.ins >= 2 then
-                local la = op.ins[2]
-                if la.space == "register" and la.offset == seg_vmcode_off then
-                    found_vmcode_load = true
-                end
-                if vmRegBase ~= 0 then
-                    local load_addr = resolve_addr(row, la)
-                    if is_vmregfile(load_addr) then found_vmreg_load = true end
-                end
-            end
-
-            ::next::
-        end
-    end
-
-    if found_vmstack_store and found_vmcode_load and not found_vmreg_load then
-        return true, "vPushImm", ""
-    end
-    return false
-end
-
-local function tryMatch_vMemAccess(seg_rows, seg_vmcode_off, ctx)
-    local vso = ctx.vmstack_off_reg
-    local vdr = ctx.vmstack_direct_reg
-    local du = build_seg_defuse(seg_rows)
-
-    local sem_stores = 0
-    local the_store_op = nil
-    local sem_loads = 0
-
-    for _, ri in ipairs(seg_rows) do
-        local row = rows[ri]
-        for _, op in ipairs(row.pcode) do
-            if op.dead then goto next end
-
-            if op.opc_name == "STORE" and #op.ins >= 3 then
-                local dst = trace_varnode(op.ins[2], du, seg_vmcode_off, vso, vdr, 0)
-                if dst.is_vmstack_addr or dst.from_vmstack then
-                    sem_stores = sem_stores + 1
-                    if not the_store_op then the_store_op = op end
-                end
-            end
-
-            if op.opc_name == "LOAD" and #op.ins >= 2 then
-                local addr = trace_varnode(op.ins[2], du, seg_vmcode_off, vso, vdr, 0)
-                if addr.is_vmstack_addr or addr.from_vmcode or addr.from_vmstack then
-                    sem_loads = sem_loads + 1
-                end
-            end
-
-            ::next::
-        end
-    end
-
-    local is_write = (sem_stores == 2 and sem_loads == 2)
-    local is_read  = (sem_stores == 1 and sem_loads == 3)
-    if not is_read and not is_write then return false end
-    if not the_store_op or #the_store_op.ins < 3 then return false end
-
-    local dst = trace_varnode(the_store_op.ins[2], du, seg_vmcode_off, vso, vdr, 0)
-    local src = trace_varnode(the_store_op.ins[3], du, seg_vmcode_off, vso, vdr, 0)
-    if not dst.is_vmstack_addr and not dst.from_vmstack then return false end
-    if not src.from_vmstack and not src.from_vmcode then return false end
-
-    if is_write then return true, "vWriteMem", string.format("sem S=%d L=%d", sem_stores, sem_loads) end
-    return true, "vReadMem", string.format("sem S=%d L=%d", sem_stores, sem_loads)
-end
-
-local function tryMatch_vLogicalOp(seg_rows, seg_vmcode_off, ctx)
-    if vmRegBase == 0 then return false end
-
-    local found_vmreg_store = false
-    local found_vmstack_any = false
-    local vmreg_load_count = 0
-
-    for _, ri in ipairs(seg_rows) do
-        local row = rows[ri]
-        local uv = build_unique_vals(row)
-        for _, op in ipairs(row.pcode) do
-            if op.dead then goto next end
-
-            if op.opc_name == "STORE" and #op.ins >= 3 then
-                if is_vmstack_store_fn(row, op.ins[2]) then
-                    found_vmstack_any = true
+        for j = 1, #live - 1 do
+            if live[j].mnemonic == "pushfq" then
+                local nxt = live[j + 1]
+                if nxt.mnemonic == "pop" and #nxt.operands >= 1
+                   and is_bare_mem(nxt.operands[1], vs_reg) then
+                    pushfq_idx = j
+                    pop_idx = j + 1
                     break
                 end
-                local dst_addr = resolve_addr(row, op.ins[2])
-                if is_vmregfile(dst_addr) then found_vmreg_store = true end
             end
-
-            if op.opc_name == "LOAD" and #op.ins >= 2 then
-                local load_addr = resolve_addr(row, op.ins[2])
-                if is_vmregfile(load_addr) then vmreg_load_count = vmreg_load_count + 1 end
-            end
-
-            ::next::
         end
-        if found_vmstack_any then break end
-    end
 
-    if not found_vmstack_any and found_vmreg_store and vmreg_load_count >= 2 then
-        return true, "vLogicalOp", string.format("vmReg LOAD×%d", vmreg_load_count)
-    end
-    return false
-end
+        if pushfq_idx then
+            -- 在 pushfq 之前找算术/逻辑指令
+            local arith_ops = {
+                add = "vAdd", sub = "vSub",
+                ["and"] = "vAnd", ["or"] = "vOr", xor = "vXor",
+                ["not"] = "vNot", neg = "vNeg",
+                shr = "vShr", shl = "vShl", sar = "vSar",
+                imul = "vImul", mul = "vMul",
+                nor = "vNor", nand = "vNand",
+            }
 
-local function tryMatch_vExit(seg_rows, live_stores, live_loads)
-    if live_loads >= 7 and live_stores == 0 then
-        return true, "vExit", string.format("L=%d S=0", live_loads)
-    end
-    return false
-end
-
--- ═══════════════════════════════════════════════════════════════
--- 主流程
--- ═══════════════════════════════════════════════════════════════
-
-log("=== Handler 划分 (完整版) ===")
-log(string.format("vmCode=%s(0x%X)  vmStack=%s(0x%X)  vmRegBase=0x%X",
-    vmCode_reg, vmcode_ghidra_off, vmStack_reg, vmstack_ghidra_off, vmRegBase))
-log("")
-
--- ── 第一步: 切段 ──
-log("━━━ 切段: 遇到 BRANCHIND/RETURN 切一刀 ━━━")
-
-local segs = {}  -- { {row_indices={}, boundary=string, live_stores=, live_loads=} }
-local cur_rows = {}
-
-for i, row in ipairs(rows) do
-    cur_rows[#cur_rows + 1] = i
-    local is_boundary = false
-    local boundary_op = ""
-    for _, op in ipairs(row.pcode) do
-        if not op.dead and (op.opc_name == "BRANCHIND" or op.opc_name == "RETURN") then
-            is_boundary = true
-            boundary_op = op.opc_name
-            break
-        end
-    end
-
-    if is_boundary then
-        -- 统计 live STORE/LOAD
-        local ts, tl = 0, 0
-        for _, ri in ipairs(cur_rows) do
-            for _, op in ipairs(rows[ri].pcode) do
-                if not op.dead then
-                    if op.opc_name == "STORE" then ts = ts + 1 end
-                    if op.opc_name == "LOAD"  then tl = tl + 1 end
+            for j = pushfq_idx - 1, 1, -1 do
+                local row = live[j]
+                local vname = arith_ops[row.mnemonic]
+                if vname then
+                    typ = vname
+                    -- 尝试获取操作数的值
+                    if row.regs and row.regs.valid and #row.operands >= 2 then
+                        local op1 = row.operands[1]
+                        local op2 = row.operands[2]
+                        local a = (op1.type == "reg" and row.regs[op1.reg]) and row.regs[op1.reg] or nil
+                        local b = (op2.type == "reg" and row.regs[op2.reg]) and row.regs[op2.reg] or nil
+                        if a and b then
+                            det = string.format("0x%X %s 0x%X", a, row.mnemonic, b)
+                        elseif a then
+                            det = string.format("0x%X %s ...", a, row.mnemonic)
+                        end
+                    elseif row.regs and row.regs.valid and #row.operands >= 1 then
+                        local op1 = row.operands[1]
+                        local a = (op1.type == "reg" and row.regs[op1.reg]) and row.regs[op1.reg] or nil
+                        if a then
+                            det = string.format("%s 0x%X", row.mnemonic, a)
+                        end
+                    end
+                    break
                 end
             end
-        end
-        segs[#segs + 1] = {
-            row_indices = cur_rows,
-            boundary = boundary_op,
-            live_stores = ts,
-            live_loads = tl,
-        }
-        log(string.format("  seg %d: row %d~%d (%d条)  %s  S=%d L=%d  (0x%X: %s)",
-            #segs, cur_rows[1], cur_rows[#cur_rows], #cur_rows,
-            boundary_op, ts, tl, row.addr, row.asm))
-        cur_rows = {}
-    end
-end
 
--- 末尾残余
-if #cur_rows > 0 then
-    local ts, tl = 0, 0
-    for _, ri in ipairs(cur_rows) do
-        for _, op in ipairs(rows[ri].pcode) do
-            if not op.dead then
-                if op.opc_name == "STORE" then ts = ts + 1 end
-                if op.opc_name == "LOAD"  then tl = tl + 1 end
+            -- 找到了 pushfq+pop 但没识别出具体运算，标记为 vOp
+            if typ == "unknown" then
+                typ = "vOp"
             end
         end
     end
-    segs[#segs + 1] = {
-        row_indices = cur_rows,
-        boundary = "(truncated)",
-        live_stores = ts,
-        live_loads = tl,
-    }
-    log(string.format("  seg %d: row %d~%d (残余)", #segs, cur_rows[1], cur_rows[#cur_rows]))
-end
 
-log(string.format("\n切段: %d 个  C++: %d 个\n", #segs, #handlers))
+    -- ══════════════════════════════════════════════════════════
+    -- vStore 特征（内存写入）:
+    --   mov  REG1, qword ptr [vs_reg]        ← 目标地址
+    --   mov  REG2, [vs_reg + 8]              ← 写入的值
+    --   add  vs_reg, M                        ← 弹出 (M=0xA→byte, 0xC→dword, 0x10→qword)
+    --   mov  [REG1], REG2                     ← 写入内存
+    -- ══════════════════════════════════════════════════════════
+    if typ == "unknown" and #live >= 4 then
+        local i1 = live[1]
+        local i2 = live[2]
+        local i3 = live[3]
+        local i4 = live[4]
 
--- ── 第二步: 逐段分类 ──
-log("━━━ 逐段分类 (完整 trace_varnode 溯源) ━━━")
-log("")
+        -- 第1条: mov REG1, qword ptr [vs_reg]
+        if i1.mnemonic == "mov" and #i1.operands >= 2
+           and i1.operands[1].type == "reg"
+           and is_bare_mem(i1.operands[2], vs_reg) then
 
--- 分类上下文 (跨段积累 vmstack_direct_reg)
-local ctx = {
-    vmstack_off_reg = vmstack_ghidra_off,
-    vmstack_direct_reg = 0,
-}
+            local addr_reg = i1.operands[1].reg
 
-for si, seg in ipairs(segs) do
-    local sr = seg.row_indices
-    local first = rows[sr[1]]
-    local last  = rows[sr[#sr]]
+            -- 第2条: mov REG2, [vs_reg + 8]
+            if i2.mnemonic == "mov" and #i2.operands >= 2
+               and i2.operands[1].type == "reg"
+               and i2.operands[2].type == "mem" and i2.operands[2].mem_base == vs_reg
+               and i2.operands[2].mem_disp == 8 then
 
-    log(string.format("┌─ seg %d: row %d~%d  [0x%X ~ 0x%X]  %d条  S=%d L=%d ─────",
-        si, sr[1], sr[#sr], first.addr, last.addr, #sr, seg.live_stores, seg.live_loads))
+                local val_reg = i2.operands[1].reg
 
-    if si == 1 then
-        log("│  [判定] (init+dispatch) 跳过")
-        local cpp = #handlers >= 1 and handlers[1].type or "?"
-        log(string.format("│  [C++]  %s", cpp))
-        log("└─────────────────────────────────")
-        goto next_seg
-    end
+                -- 第3条: add vs_reg, M
+                if i3.mnemonic == "add" and #i3.operands >= 2
+                   and i3.operands[1].type == "reg" and i3.operands[1].reg == vs_reg
+                   and i3.operands[2].type == "imm" then
 
-    -- 每段探测 vmCode 寄存器 (对应 C++ detect_seg_vmcode)
-    local seg_vmcode_off = vmcode_ghidra_off
+                    local pop_size = i3.operands[2].imm
+                    local store_size = pop_size - 8  -- 8=地址, 剩余=值大小
 
-    -- 按 C++ classify_seg 优先级尝试匹配
-    local matched, seg_type, detail = false, "unknown", ""
-    local reason = ""
+                    -- 第4条: mov [REG1], REG2
+                    if i4.mnemonic == "mov" and #i4.operands >= 2
+                       and i4.operands[1].type == "mem"
+                       and i4.operands[2].type == "reg" then
 
-    matched, seg_type, detail = tryMatch_vPopReg(sr, seg_vmcode_off, ctx)
-    if matched then reason = "vmRegFile STORE + vmStack LOAD (trace确认)" goto classified end
+                        local size_map = {[1]="vStore8", [2]="vStore16", [4]="vStore32", [8]="vStore64"}
+                        typ = size_map[store_size] or string.format("vStore%d", store_size * 8)
 
-    matched, seg_type, detail = tryMatch_vPushReg(sr, seg_vmcode_off, ctx)
-    if matched then reason = "vmStack STORE + vmRegFile LOAD" goto classified end
-
-    matched, seg_type, detail = tryMatch_vPushImm(sr, seg_vmcode_off, ctx)
-    if matched then reason = "vmStack STORE + vmCode LOAD, 无vmRegFile" goto classified end
-
-    matched, seg_type, detail = tryMatch_vMemAccess(sr, seg_vmcode_off, ctx)
-    if matched then reason = "语义计数匹配 + trace_varnode 溯源确认" goto classified end
-
-    matched, seg_type, detail = tryMatch_vLogicalOp(sr, seg_vmcode_off, ctx)
-    if matched then reason = "无vmStack, vmRegFile STORE + LOAD×2+" goto classified end
-
-    matched, seg_type, detail = tryMatch_vExit(sr, seg.live_stores, seg.live_loads)
-    if matched then reason = "LOAD≥7, STORE=0 (pop序列恢复寄存器)" goto classified end
-
-    reason = "所有模式均未命中"
-
-    ::classified::
-
-    log(string.format("│  [判定] %-12s %s", seg_type, detail))
-    log(string.format("│  [依据] %s", reason))
-
-    -- 对比 C++
-    local cpp_type = si <= #handlers and handlers[si].type or "?"
-    local cpp_detail = si <= #handlers and handlers[si].detail or ""
-    local match_ok = (seg_type == cpp_type)
-    if match_ok then
-        log(string.format("│  [C++]  %-12s %s", cpp_type, cpp_detail))
-    else
-        log(string.format("│  [C++]  %-12s %s  ← 不一致!", cpp_type, cpp_detail))
-    end
-
-    -- vmstack_direct_reg 状态
-    if ctx.vmstack_direct_reg ~= 0 then
-        local vdr_name = ghidra_to_reg[ctx.vmstack_direct_reg] or string.format("0x%X", ctx.vmstack_direct_reg)
-        log(string.format("│  [ctx]  vmstack_direct_reg = %s", vdr_name))
-    end
-
-    log("└─────────────────────────────────")
-
-    ::next_seg::
-end
-
--- 汇总
-log("")
-log("━━━ 汇总 ━━━")
-local match_cnt, mismatch_cnt = 0, 0
-local mismatch_list = {}
-for si = 1, #segs do
-    if si <= #handlers then
-        local lua_type = "?"
-        -- 重新快速判定 (不打 log)
-        if si == 1 then
-            lua_type = "(init+dispatch)"
-        else
-            local sr = segs[si].row_indices
-            local seg_vmcode_off = vmcode_ghidra_off
-            local m, t, _ = tryMatch_vPopReg(sr, seg_vmcode_off, ctx)
-            if m then lua_type = t
-            else m, t = tryMatch_vPushReg(sr, seg_vmcode_off, ctx)
-                if m then lua_type = t
-                else m, t = tryMatch_vPushImm(sr, seg_vmcode_off, ctx)
-                    if m then lua_type = t
-                    else m, t = tryMatch_vMemAccess(sr, seg_vmcode_off, ctx)
-                        if m then lua_type = t
-                        else m, t = tryMatch_vLogicalOp(sr, seg_vmcode_off, ctx)
-                            if m then lua_type = t
-                            else m, t = tryMatch_vExit(sr, segs[si].live_stores, segs[si].live_loads)
-                                if m then lua_type = t
-                                else lua_type = "unknown" end
-                            end
+                        -- 地址从 i4 时刻取 REG1，值从 i4 时刻取 REG2
+                        local addr_val = get_reg_val(i4.regs, addr_reg)
+                        local write_val = get_reg_val(i4.regs, i4.operands[2].reg)
+                        if addr_val and write_val then
+                            det = string.format("[0x%X] = 0x%X", addr_val, write_val)
+                        elseif addr_val then
+                            det = string.format("[0x%X]", addr_val)
                         end
                     end
                 end
             end
         end
-        if lua_type == handlers[si].type then
-            match_cnt = match_cnt + 1
-        else
-            mismatch_cnt = mismatch_cnt + 1
-            mismatch_list[#mismatch_list + 1] = string.format(
-                "  seg %d: Lua=%s  C++=%s", si, lua_type, handlers[si].type)
-        end
     end
+
+    h.type = typ
+    h.detail = det
+    log(string.format("[handler %2d] %-12s %s", hi - 1, typ, det))
+
+    ::next_handler::
 end
 
-log(string.format("段数: Lua=%d  C++=%d", #segs, #handlers))
-log(string.format("一致: %d / %d", match_cnt, math.min(#segs, #handlers)))
-
-if mismatch_cnt > 0 then
-    log(string.format("[warn] 不一致: %d 个", mismatch_cnt))
-    for _, s in ipairs(mismatch_list) do log(s) end
-else
-    log("全部一致")
-end
-
-log("[ok] done")
+log("\n[ok] done")
