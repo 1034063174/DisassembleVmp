@@ -464,8 +464,8 @@ void UiMain::renderVmpTab()
     // ═══ 工具栏 ══════════════════════════════════════════════════════════════
     ImGui::SetNextItemWidth(80);
     ImGui::InputInt("步数##vmps", &vmp_step_count_, 0, 0);
-    if (vmp_step_count_ < 100)    vmp_step_count_ = 100;
-    if (vmp_step_count_ > 100000) vmp_step_count_ = 100000;
+    if (vmp_step_count_ < 100)      vmp_step_count_ = 100;
+    if (vmp_step_count_ > 10000000) vmp_step_count_ = 10000000;
     ImGui::SameLine();
 
     ImGui::Checkbox("忽略eflag##vmpeflag", &vmp_ignore_eflag_);
