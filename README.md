@@ -9,15 +9,21 @@
 以 `pushtest_demo` 为例，原始代码经 VMProtect 虚拟化后变成 110+ 个 handler、5000+ 条混淆指令。经引擎分析 + LLVM 优化后还原为：
 
 ```asm
-; 原始代码                              ; LLVM 输出
-mov  qword ptr [rcx+1], 0x12345678     mov  qword ptr [rcx + 1], 0x12345678  ✓
+; ══ 原始代码 (pushtest.asm) ══          ; ══ LLVM 优化输出 ══
+push rax                                ;
+mov  rax, 12345679h                     ;  (死代码，被消除)
+mov  rax, 12345678h                     ;
+add  rcx, 1                             ;  (与 sub rcx,1 抵消)
+mov  qword ptr [rcx], rax              mov  qword ptr [rcx + 1], 0x12345678  ✓
+sub  rcx, 1                             ;  (与 add rcx,1 抵消)
+pop  rax                                ;  (push/pop 抵消)
 mov  byte ptr [rcx], 0ABh              mov  byte ptr [rcx], 0xAB             ✓
 mov  dword ptr [rcx+1], 0DEADBEEFh     mov  dword ptr [rcx + 1], 0xDEADBEEF  ✓
 mov  rcx, 123456789ABCDEFh             movabs rcx, 0x123456789ABCDEF         ✓
 ret                                    ret                                   ✓
 ```
 
-5 条指令，零噪音，寄存器名完全正确。LLVM 自动完成常量折叠、死代码消除、`add/sub` 抵消等优化。
+10 条原始指令 → 5 条等价输出。LLVM 自动完成：常量传播（`rax` → `0x12345678`）、死代码消除（`mov rax, 12345679h`）、`add/sub` 抵消、`push/pop` 消除、VMP 位运算展开（NAND/NOR）的化简。
 
 ## 设计理念
 
